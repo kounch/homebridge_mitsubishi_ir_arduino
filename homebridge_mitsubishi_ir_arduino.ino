@@ -280,21 +280,21 @@ void setTemp(int mode, int temp, int fan, int vane, bool off) {
   if (mode >= 0 && mode < sizeof(modes)) {
     mode = modes[mode];
   } else {
-    mode = HVAC_AUTO;
+    mode = modes[0];
   }
 
   //HVAC Fan
   if (fan >= 0 && fan < sizeof(fans)) {
     fan = fans[fan];
   } else {
-    fan = FAN_SPEED_AUTO;
+    fan = fans[0];
   }
 
   //HVAC Vane
   if (vane >= 0 && vane < sizeof(vanes)) {
     vane = vanes[vane];
   } else {
-    vane = VANNE_AUTO_MOVE;
+    vane = vanes[sizeof(vanes) - 1];
   }
 
   //Send Command
