@@ -660,7 +660,7 @@ void IRsend::sendHvacToshiba(
 {
  
 #define HVAC_TOSHIBA_DATALEN 9
-#define  HVAC_TOSHIBA_DEBUG;  // Un comment to access DEBUG information through Serial Interface
+#define  HVAC_TOSHIBA_DEBUG  // Un comment to access DEBUG information through Serial Interface
 
   byte mask = 1; //our bitmask
   //﻿F20D03FC0150000051
@@ -751,7 +751,7 @@ void IRsend::sendHvacToshiba(
         }
         else { // Bit ZERO
           mark(HVAC_TOSHIBA_BIT_MARK);
-          space(HVAC_MISTUBISHI_ZERO_SPACE);
+          space(HVAC_TOSHIBA_ZERO_SPACE);
         }
         //Next bits
       }
