@@ -21,7 +21,7 @@
   - 940nm IR LED (VS1838B) -> PWM pin 3 (required by IRremote2)
   Optional:
   - ESP8266 (v1.3 SDK 2.0 or later) -> pin 4 (TX) & 5 (RX)
-  
+
 
   Waits for commands (via serial or TCP/IP on port 80):
   'G' - Get temperature value from LM35
@@ -48,7 +48,7 @@
   The default size of the buffer is 64. Change it into a bigger number, like 128 or more.
 */
 
-//define MITSUBISHI_WIFI
+//#define MITSUBISHI_WIFI
 
 #include "IRremote2.h"
 
@@ -57,9 +57,9 @@
 #include <SoftwareSerial.h>
 #endif
 
-const int tmpPin = 0; // analog pin (temperature)
-IRsend irsend; //To send infrared commands
-const int baudRate = 19200; //Serial connection speed (USB)
+const int tmpPin = 0;             // analog pin (temperature)
+IRsend irsend;                    //To send infrared commands
+const int baudRate = 19200;       //Serial connection speed (USB)
 const int LINE_BUFFER_SIZE = 128; // max line length is one less than this
 
 //LED OK delays and count
@@ -73,17 +73,19 @@ const int LED_KO_L = 250;
 const int LED_KO_N = 12;
 
 #ifdef MITSUBISHI_WIFI
-const int rxPin = 4;  //Serial RX pin - ESP8266
-const int txPin = 5;  //Serial TX pin - ESP8266
+const int rxPin = 4; //Serial RX pin - ESP8266
+const int txPin = 5; //Serial TX pin - ESP8266
 
-const char* SSID = "WifiName";
-const char* PASSWORD = "WifiPassword";
-const char* hostname = "ArduinoHostname";
+const char *SSID = "WifiName";
+const char *PASSWORD = "WifiPassword";
+const char *hostname = "ArduinoHostname";
 
 SoftwareSerial ESPserial(rxPin, txPin); //Wifi
 ESP8266 wifi(ESPserial);
+#else
+char buffer[LINE_BUFFER_SIZE] = {0}; // a String to hold serial incoming data
+boolean stringComplete = false;         // whether the string is complete
 #endif
-
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -128,30 +130,32 @@ void loop() {
 #ifdef MITSUBISHI_WIFI
   processWifi();
 #else
-  uint8_t buffer[LINE_BUFFER_SIZE] = { 0 };
+  char answer[20] = {0};
 
-  if (read_line(buffer, sizeof(buffer)) < 0) {
-    Serial.println("KO,Line too long");
-    return; // skip command processing and try again on next iteration of loop
+  if (stringComplete) {
+    parseCommand(buffer, sizeof(buffer), answer); //Parse and execute
+    Serial.print(answer);
+    // clear the string:
+    buffer[0] = 0;
+    stringComplete = false;
   }
-  char* answer = parseCommand(buffer, sizeof(buffer)); //Parse and execute
-  Serial.print(answer);
 #endif
 }
 
 #ifdef MITSUBISHI_WIFI
 void processWifi() {
-  uint8_t buffer[LINE_BUFFER_SIZE] = { 0 };
+  char buffer[LINE_BUFFER_SIZE] = {0};
+  char answer[20] = {0};
   char message[20];
   uint8_t mux_id;
 
-  uint32_t len = wifi.recv(&mux_id, buffer, sizeof(buffer), 100);
+  uint32_t len = wifi.recv(&mux_id, (uint8_t *)buffer, sizeof(buffer), 100);
   if (len > 0) {
     sprintf(message, "Received from: %i", mux_id);
     Serial.println(message);
-    Serial.print((char*)buffer);
-    char* answer = parseCommand(buffer, sizeof(buffer)); //Parse and execute
-    wifi.send(mux_id, (const uint8_t*)answer, strlen(answer));
+    Serial.print((char *)buffer);
+    parseCommand(buffer, sizeof(buffer), answer); //Parse and execute
+    wifi.send(mux_id, (const uint8_t *)answer, strlen(answer));
     Serial.println(answer);
     delay(100);
 
@@ -162,31 +166,64 @@ void processWifi() {
     }
   }
 }
+#else
+/*
+  SerialEvent occurs whenever a new data comes in the hardware serial RX. This
+  routine is run between each time loop() runs, so using delay inside loop can
+  delay response. Multiple bytes of data may be available.
+*/
+void serialEvent() {
+  while (Serial.available()) {
+    int index = strlen(buffer);
+    if (index < LINE_BUFFER_SIZE) {
+      char ch = Serial.read(); // read next character
+      //Serial.print(ch); // echo it back
+      if (ch == '\n') {
+        buffer[index] = 0;
+        stringComplete = true;
+      } else {
+        buffer[index] = ch;
+      }
+    } else {
+      char ch;
+      do {
+        // Wait until characters are available
+        while (Serial.available() == 0)
+        {
+        }
+        ch = Serial.read(); // read next character (and discard it)
+        //Serial.print(ch); // echo it back
+      } while (ch != '\n');
+
+      buffer[0] = 0; // set buffer to empty string even though it should not be used
+      stringComplete = false;
+    }
+  }
+}
 #endif
 
 //Split command using "," extract values and execute command
-char* parseCommand(char* commandLine, int bufsize) {
+char *parseCommand(char *commandLine, int bufsize, char *resultado) {
   int mode = -1;
   int temp = -1;
   int fan = -1;
-  int vane  = -1;
+  int vane = -1;
   bool off = false;
   char str_temp[6];
-  char resultado[30];
+  //char resultado[30];
 
-  int i = 0; //Index of command in command line
-  char* command = strtok(commandLine, ","); //Tokenize
-  while (command != 0)
-  {
+  int i = 0;                                //Index of command in command line
+  char *command = strtok(commandLine, ","); //Tokenize
+  while (command != 0) {
     switch (i++) {
       case 0:
-        if (strcmp(command, "G")  == 0) {
+        if (strcmp(command, "G") == 0) {
           // Get Temp
           float fTemp = getTemp();
           dtostrf(fTemp, 4, 2, str_temp);
           sprintf(resultado, "OK,%s\n", str_temp);
           return (resultado);
-        } else if (strcmp(command, "S")  == 0) {
+        } else if (strcmp(command, "S") == 0) {
           //Set Temp
         } else {
           //Unknown
@@ -215,12 +252,12 @@ char* parseCommand(char* commandLine, int bufsize) {
     command = strtok(0, ","); //Get next command (token)
   }
 
-  if (vane < 0 ) {
+  if (vane < 0) {
     sprintf(resultado, "KO,Not enough parameters\n");
     return (resultado);
   }
 
-  setTemp (mode, temp, fan, vane, off);
+  setTemp(mode, temp, fan, vane, off);
   sprintf(resultado, "OK,%i\n", temp);
   return (resultado);
 }
@@ -228,12 +265,12 @@ char* parseCommand(char* commandLine, int bufsize) {
 //Get Temperature
 float getTemp() {
   int value = analogRead(tmpPin);
-  float celsius = ( value / 1024.0 ) * 500;
+  float celsius = (value / 1024.0) * 500;
   return celsius;
 }
 
 //Set temperature
-void setTemp (int mode, int temp, int fan, int vane, bool off) {
+void setTemp(int mode, int temp, int fan, int vane, bool off) {
   int modes[] = {HVAC_AUTO, HVAC_HOT, HVAC_COLD, HVAC_DRY, HVAC_FAN};
   int fans[] = {FAN_SPEED_AUTO, FAN_SPEED_1, FAN_SPEED_2, FAN_SPEED_3, FAN_SPEED_4, FAN_SPEED_5, FAN_SPEED_SILENT};
   int vanes[] = {VANNE_AUTO, VANNE_H1, VANNE_H2, VANNE_H3, VANNE_H4, VANNE_H5, VANNE_AUTO_MOVE};
@@ -262,40 +299,6 @@ void setTemp (int mode, int temp, int fan, int vane, bool off) {
   //Send Command
   irsend.sendHvacMitsubishi(mode, temp, fan, vane, off);
   return;
-}
-
-//Read line from Serial
-int read_line(char* buffer, int bufsize)
-{
-  for (int index = 0; index < bufsize; index++) {
-    // Wait until characters are available
-    while (Serial.available() == 0) {
-    }
-
-    char ch = Serial.read(); // read next character
-    //Serial.print(ch); // echo it back: useful with the serial monitor (optional)
-
-    if (ch == '\n') {
-      buffer[index] = 0; // end of line reached: null terminate string
-      return index; // success: return length of string (zero if string is empty)
-    }
-
-    buffer[index] = ch; // Append character to buffer
-  }
-
-  // Reached end of buffer, but have not seen the end-of-line yet.
-  // Discard the rest of the line (safer than returning a partial line).
-  char ch;
-  do {
-    // Wait until characters are available
-    while (Serial.available() == 0) {
-    }
-    ch = Serial.read(); // read next character (and discard it)
-    //Serial.print(ch); // echo it back
-  } while (ch != '\n');
-
-  buffer[0] = 0; // set buffer to empty string even though it should not be used
-  return -1; // error: return negative one to indicate the input was too long
 }
 
 //LED blinking for notifications
