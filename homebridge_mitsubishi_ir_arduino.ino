@@ -183,6 +183,7 @@ void serialEvent() {
         stringComplete = true;
       } else {
         buffer[index] = ch;
+        buffer[index + 1] = 0; // make sure that the buffer is always null terminated
       }
     } else {
       char ch;
