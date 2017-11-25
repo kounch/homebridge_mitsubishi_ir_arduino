@@ -18,6 +18,8 @@
 
   Requires:
   - Temperature sensor (LM35) -> analog pin 0
+    or
+  - Temperature and Humidity sensor (DHT22) -> digital pin 2
   - 940nm IR LED (VS1838B) -> PWM pin 3 (required by IRremote2)
   Optional:
   - ESP8266 (v1.3 SDK 2.0 or later) -> pin 4 (TX) & 5 (RX)
@@ -49,6 +51,8 @@
 */
 
 //#define MITSUBISHI_WIFI
+//#define DHT22_ENABLED
+//#define CONFIGURE_WIFI
 
 #include "IRremote2.h"
 
@@ -57,7 +61,16 @@
 #include <SoftwareSerial.h>
 #endif
 
-const int tmpPin = 0;             // analog pin (temperature)
+#ifdef DHT22_ENABLED
+#include <SimpleDHT.h>
+SimpleDHT22 dht22;
+#endif
+
+#ifdef DHT22_ENABLED
+const int tmpPin = 2; // digital pin (temperature and humidity - DHT22)
+#else
+const int tmpPin = 0;                // analog pin (temperature - LM35)
+#endif
 IRsend irsend;                    //To send infrared commands
 const int baudRate = 19200;       //Serial connection speed (USB)
 const int LINE_BUFFER_SIZE = 128; // max line length is one less than this
@@ -84,55 +97,66 @@ SoftwareSerial ESPserial(rxPin, txPin); //Wifi
 ESP8266 wifi(ESPserial);
 #else
 char buffer[LINE_BUFFER_SIZE] = {0}; // a String to hold serial incoming data
-boolean stringComplete = false;         // whether the string is complete
+boolean stringComplete = false;      // whether the string is complete
 #endif
 
-void setup() {
+void setup()
+{
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
   Serial.begin(baudRate); //Debug
   digitalWrite(LED_BUILTIN, LOW);
 
 #ifdef MITSUBISHI_WIFI
+#ifdef CONFIGURE_WIFI
   wifi.restart();
-  if (!wifi.setOprToStation()) {
+  if (!wifi.setOprToStation())
+  {
     Serial.println("ERR: setOprToStation");
     ledBlink(LED_KO_H, LED_KO_L, LED_KO_N);
   }
-  if (!wifi.joinAP(SSID, PASSWORD)) {
+  if (!wifi.joinAP(SSID, PASSWORD))
+  {
     Serial.println("ERR: JoinAP failure");
     ledBlink(LED_KO_H, LED_KO_L, LED_KO_N);
   }
-  if (!wifi.enableMUX()) {
+#endif //#CONFIGURE_WIFI
+  if (!wifi.enableMUX())
+  {
     Serial.println("ERR: enableMU");
     ledBlink(LED_KO_H, LED_KO_L, LED_KO_N);
   }
-  if (!wifi.startTCPServer(80)) {
+  if (!wifi.startTCPServer(80))
+  {
     Serial.println("ERR: startTCPServer");
     ledBlink(LED_KO_H, LED_KO_L, LED_KO_N);
   }
-  if (!wifi.setTCPServerTimeout(10)) {
+  if (!wifi.setTCPServerTimeout(10))
+  {
     Serial.print("ERR: setTCPServerTimeout");
     ledBlink(LED_KO_H, LED_KO_L, LED_KO_N);
   }
   ledBlink(LED_OK_H, LED_OK_L, LED_OK_N);
-  if (!wifi.enableMDNS(hostname, hostname, 80)) {
+  if (!wifi.enableMDNS(hostname, hostname, 80))
+  {
     Serial.print("ERR: enableMDNS");
     ledBlink(LED_KO_H, LED_KO_L, LED_KO_N);
   }
   ledBlink(LED_OK_H, LED_OK_L, LED_OK_N);
-#endif
+#endif //#MITSUBISHI_WIFI
 
   Serial.println("BOOT");
 }
 
-void loop() {
+void loop()
+{
 #ifdef MITSUBISHI_WIFI
   processWifi();
 #else
   char answer[20] = {0};
 
-  if (stringComplete) {
+  if (stringComplete)
+  {
     parseCommand(buffer, sizeof(buffer), answer); //Parse and execute
     Serial.print(answer);
     // clear the string:
@@ -143,14 +167,16 @@ void loop() {
 }
 
 #ifdef MITSUBISHI_WIFI
-void processWifi() {
+void processWifi()
+{
   char buffer[LINE_BUFFER_SIZE] = {0};
   char answer[20] = {0};
   char message[20];
   uint8_t mux_id;
 
   uint32_t len = wifi.recv(&mux_id, (uint8_t *)buffer, sizeof(buffer), 100);
-  if (len > 0) {
+  if (len > 0)
+  {
     sprintf(message, "Received from: %i", mux_id);
     Serial.println(message);
     Serial.print((char *)buffer);
@@ -159,7 +185,8 @@ void processWifi() {
     Serial.println(answer);
     delay(100);
 
-    if (!wifi.releaseTCP(mux_id)) {
+    if (!wifi.releaseTCP(mux_id))
+    {
       sprintf(message, "ERR: releaseTCP: %i", mux_id);
       Serial.println(message);
       ledBlink(LED_KO_H, LED_KO_L, LED_KO_N);
@@ -172,22 +199,31 @@ void processWifi() {
   routine is run between each time loop() runs, so using delay inside loop can
   delay response. Multiple bytes of data may be available.
 */
-void serialEvent() {
-  while (Serial.available()) {
+void serialEvent()
+{
+  while (Serial.available())
+  {
     int index = strlen(buffer);
-    if (index < LINE_BUFFER_SIZE) {
+    if (index < LINE_BUFFER_SIZE)
+    {
       char ch = Serial.read(); // read next character
       //Serial.print(ch); // echo it back
-      if (ch == '\n') {
+      if (ch == '\n')
+      {
         buffer[index] = 0;
         stringComplete = true;
-      } else {
+      }
+      else
+      {
         buffer[index] = ch;
         buffer[index + 1] = 0; // make sure that the buffer is always null terminated
       }
-    } else {
+    }
+    else
+    {
       char ch;
-      do {
+      do
+      {
         // Wait until characters are available
         while (Serial.available() == 0)
         {
@@ -204,56 +240,81 @@ void serialEvent() {
 #endif
 
 //Split command using "," extract values and execute command
-char *parseCommand(char *commandLine, int bufsize, char *resultado) {
+char *parseCommand(char *commandLine, int bufsize, char *resultado)
+{
   int mode = -1;
   int temp = -1;
   int fan = -1;
   int vane = -1;
   bool off = false;
   char str_temp[6];
-  //char resultado[30];
+  char str_humid[6];
 
   int i = 0;                                //Index of command in command line
   char *command = strtok(commandLine, ","); //Tokenize
-  while (command != 0) {
-    switch (i++) {
-      case 0:
-        if (strcmp(command, "G") == 0) {
-          // Get Temp
-          float fTemp = getTemp();
+  while (command != 0)
+  {
+    switch (i++)
+    {
+    case 0:
+      if (strcmp(command, "G") == 0)
+      {
+#ifdef DHT22_ENABLED
+        float fTemp = 0;
+        float fHumid = 0;
+        int iErr = getTempHumidity(&fTemp, &fHumid);
+        if (!iErr)
+        {
           dtostrf(fTemp, 4, 2, str_temp);
-          sprintf(resultado, "OK,%s\n", str_temp);
-          return (resultado);
-        } else if (strcmp(command, "S") == 0) {
-          //Set Temp
-        } else {
-          //Unknown
-          sprintf(resultado, "KO,Unknown Command\n");
-          return (resultado);
+          dtostrf(fHumid, 4, 2, str_humid);
+          sprintf(resultado, "OK,%s,%s\n", str_temp, str_humid);
         }
-        break;
-      case 1:
-        mode = atoi(command);
-        break;
-      case 2:
-        temp = atoi(command);
-        break;
-      case 3:
-        fan = atoi(command);
-        break;
-      case 4:
-        vane = atoi(command);
-        break;
-      case 5:
-        off = 1 - atoi(command);
-      default:
-        //Default
-        break;
+        else
+        {
+          sprintf(resultado, "KO,Could not sample data\n");
+        }
+#else
+        // Get Temp
+        float fTemp = getTemp();
+        dtostrf(fTemp, 4, 2, str_temp);
+        sprintf(resultado, "OK,%s\n", str_temp);
+#endif //#DHT22_ENABLED
+        return (resultado);
+      }
+      else if (strcmp(command, "S") == 0)
+      {
+        //Set Temp
+      }
+      else
+      {
+        //Unknown
+        sprintf(resultado, "KO,Unknown Command\n");
+        return (resultado);
+      }
+      break;
+    case 1:
+      mode = atoi(command);
+      break;
+    case 2:
+      temp = atoi(command);
+      break;
+    case 3:
+      fan = atoi(command);
+      break;
+    case 4:
+      vane = atoi(command);
+      break;
+    case 5:
+      off = 1 - atoi(command);
+    default:
+      //Default
+      break;
     }
     command = strtok(0, ","); //Get next command (token)
   }
 
-  if (vane < 0) {
+  if (vane < 0)
+  {
     sprintf(resultado, "KO,Not enough parameters\n");
     return (resultado);
   }
@@ -263,37 +324,65 @@ char *parseCommand(char *commandLine, int bufsize, char *resultado) {
   return (resultado);
 }
 
-//Get Temperature
-float getTemp() {
+#ifdef DHT22_ENABLED
+//Get Temperature and humidity (DHT22)
+int getTempHumidity(float *temperature, float *humidity)
+{
+  *temperature = 0;
+  *humidity = 0;
+
+  int err = SimpleDHTErrSuccess;
+  if ((err = dht22.read2(tmpPin, temperature, humidity, NULL)) != SimpleDHTErrSuccess)
+  {
+    //Serial.print("Read DHT22 failed, err="); Serial.println(err);delay(2000);
+    return 1;
+  }
+  return 0;
+}
+#else
+//Get Temperature (LM35)
+float getTemp()
+{
   int value = analogRead(tmpPin);
   float celsius = (value / 1024.0) * 500;
   return celsius;
 }
+#endif
 
 //Set temperature
-void setTemp(int mode, int temp, int fan, int vane, bool off) {
+void setTemp(int mode, int temp, int fan, int vane, bool off)
+{
   int modes[] = {HVAC_AUTO, HVAC_HOT, HVAC_COLD, HVAC_DRY, HVAC_FAN};
   int fans[] = {FAN_SPEED_AUTO, FAN_SPEED_1, FAN_SPEED_2, FAN_SPEED_3, FAN_SPEED_4, FAN_SPEED_5, FAN_SPEED_SILENT};
   int vanes[] = {VANNE_AUTO, VANNE_H1, VANNE_H2, VANNE_H3, VANNE_H4, VANNE_H5, VANNE_AUTO_MOVE};
 
   //HVAC Mode
-  if (mode >= 0 && mode < sizeof(modes)) {
+  if (mode >= 0 && mode < sizeof(modes))
+  {
     mode = modes[mode];
-  } else {
+  }
+  else
+  {
     mode = HVAC_AUTO;
   }
 
   //HVAC Fan
-  if (fan >= 0 && fan < sizeof(fans)) {
+  if (fan >= 0 && fan < sizeof(fans))
+  {
     fan = fans[fan];
-  } else {
+  }
+  else
+  {
     fan = FAN_SPEED_AUTO;
   }
 
   //HVAC Vane
-  if (vane >= 0 && vane < sizeof(vanes)) {
+  if (vane >= 0 && vane < sizeof(vanes))
+  {
     vane = vanes[vane];
-  } else {
+  }
+  else
+  {
     vane = VANNE_AUTO_MOVE;
   }
 
@@ -303,9 +392,11 @@ void setTemp(int mode, int temp, int fan, int vane, bool off) {
 }
 
 //LED blinking for notifications
-void ledBlink(int pauseH, int pauseL, int number) {
+void ledBlink(int pauseH, int pauseL, int number)
+{
   digitalWrite(LED_BUILTIN, LOW);
-  for (int i = 0; i < number; i++) {
+  for (int i = 0; i < number; i++)
+  {
     digitalWrite(LED_BUILTIN, HIGH);
     delay(pauseH);
     digitalWrite(LED_BUILTIN, LOW);
