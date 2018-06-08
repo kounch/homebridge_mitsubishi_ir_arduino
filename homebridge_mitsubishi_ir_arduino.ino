@@ -54,6 +54,8 @@
 //#define DHT22_ENABLED
 //#define CONFIGURE_WIFI
 
+//#define MITSUBISHI_W001CP
+
 #include "IRremote2.h"
 
 #ifdef MITSUBISHI_WIFI
@@ -387,7 +389,11 @@ void setTemp(int mode, int temp, int fan, int vane, bool off)
   }
 
   //Send Command
+  #ifdef MITSUBISHI_W001CP
+  irsend.sendHvacMitsubishi_W001CP(mode, temp, fan, vane, off);
+  #else
   irsend.sendHvacMitsubishi(mode, temp, fan, vane, off);
+  #endif
   return;
 }
 
