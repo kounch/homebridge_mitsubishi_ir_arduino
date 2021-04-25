@@ -155,7 +155,7 @@ void loop()
 #ifdef MITSUBISHI_WIFI
   processWifi();
 #else
-  char answer[20] = {0};
+  char answer[30] = {0};
 
   if (stringComplete)
   {
